@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KODA 일일동향보고</title>
+<style>
+  :root{--navy:#0b2a55;--blue:#1d5fc4;--bg:#f3f5f9;--card:#fff;--line:#e2e7ef;--text:#1b2230;--sub:#667085}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:var(--text);line-height:1.55;word-break:keep-all;overflow-wrap:anywhere}
+  a{color:inherit;text-decoration:none}
+  header{background:var(--navy);color:#fff}
+  .bar{max-width:1240px;margin:0 auto;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:24px}
+  header h1 small{display:block;font-size:13px;font-weight:400;opacity:.75}
+  #search{width:320px;max-width:100%;padding:11px 16px;border:0;border-radius:24px;font-size:15px}
+  .wrap{max-width:1240px;margin:24px auto;padding:0 24px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:24px;align-items:start}
+  aside{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+  aside h2{font-size:14px;color:var(--sub);padding:4px 8px 8px}
+  .date{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:8px;font:inherit;cursor:pointer}
+  .date:hover{background:#eef3fb}
+  .date.on{background:var(--blue);color:#fff;font-weight:700}
+  .title{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .title h2{font-size:22px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;font:inherit;font-size:14px;cursor:pointer;display:inline-block}
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  .top{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hero img{width:100%;height:300px;object-fit:cover;object-position:top;display:block;background:#dde3ec}
+  .hero a.head{display:block;padding:16px 18px;font-size:19px;font-weight:700}
+  .reps{display:flex;flex-direction:column;gap:12px}
+  .rep{flex:1;display:flex;flex-direction:column;justify-content:center;padding:16px 18px;font-weight:600}
+  .rep:hover,.item:hover,.hero a.head:hover{color:var(--blue)}
+  .src{display:block;font-size:12.5px;font-weight:400;color:var(--sub);margin-top:3px}
+  section.card{margin-bottom:16px}
+  section h3{padding:13px 18px;font-size:16px;color:var(--navy);border-bottom:2px solid var(--navy)}
+  .item{display:block;padding:12px 18px;border-bottom:1px solid var(--line)}
+  .item:last-child{border-bottom:0}
+  .msg{padding:40px 20px;text-align:center;color:var(--sub)}
+  #toTop{position:fixed;right:24px;bottom:24px;width:48px;height:48px;border-radius:50%;border:0;background:var(--navy);color:#fff;font-weight:700;cursor:pointer}
+  @media (max-width:900px){
+    .wrap{grid-template-columns:minmax(0,1fr);padding:0 16px}
+    aside{position:static;display:flex;overflow-x:auto;gap:4px}
+    aside h2{display:none}
+    #dates{display:flex;gap:4px}
+    .date{white-space:nowrap}
+    .top{grid-template-columns:minmax(0,1fr)}
+    #search{width:100%}
+  }
+  @media print{header,aside,.btns,#toTop{display:none}.wrap{display:block}}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1><small>한국디벨로퍼협회 KODA</small>일일동향보고</h1>
+    <input id="search" type="search" placeholder="전체 날짜에서 기사 검색" aria-label="기사 검색">
+  </div>
+</header>
+
+<div class="wrap">
+  <aside><h2>날짜별 보기</h2><div id="dates"></div></aside>
+  <main id="main"><div class="msg">소식을 불러오는 중입니다…</div></main>
+</div>
+<button id="toTop" type="button">TOP</button>
+
+<script>
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZSE8w18mQ75Blx6U6nkJHaNWGe-O9NaSROYsdTrglBn_fa1VqtGwva4GULoymaopAn_J9lpwAoJnu/pub?gid=0&single=true&output=csv";
+
+/* ---------- 데이터 해석 ---------- */
+function parseCSV(text){
+  const rows=[]; let row=[], cell="", q=false;
+  text=text.replace(/^\uFEFF/,"");
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; }
+      else cell+=c;
+    }else if(c==='"') q=true;
+    else if(c===','){row.push(cell);cell="";}
+    else if(c==='\n'){row.push(cell);rows.push(row);row=[];cell="";}
+    else if(c!=='\r') cell+=c;
+  }
+  if(cell||row.length){row.push(cell);rows.push(row);}
+  return rows;
+}
+
+function parseArticles(cell){
+  const out=[]; let title="";
+  const push=url=>{
+    let t=title.trim().replace(/^[-•]\s*/,""), source="";
+    const m=t.match(/\(\s*출처\s*:\s*(.*?)\)\s*$/);
+    if(m){source=m[1].trim(); t=t.slice(0,m.index).trim();}
+    if(t) out.push({title:t,source,url});
+    title="";
+  };
+  for(const raw of (cell||"").split("\n")){
+    const line=raw.trim();
+    if(!line) continue;
+    if(/^https?:\/\/\S+$/.test(line)){push(line);continue;}
+    if(/^-\s/.test(line) && title) push("");
+    const open = title.lastIndexOf("(") > title.lastIndexOf(")"); // 출처명이 줄바꿈된 경우
+    title += (title && !open ? " " : "") + line;
+  }
+  if(title) push("");
+  return out;
+}
+
+function toDays(rows){
+  const head=rows[0].map(s=>s.trim());
+  const col=k=>head.findIndex(h=>h.startsWith(k));
+  const iDate=col("날짜"), iImg=head.indexOf("썸네일이미지"), iLink=col("썸네일이미지링크"),
+        iMain=col("썸네일 한글제목"), iA=col("[A]"), iB=col("[B]"), iC=col("[C]");
+  const reps=head.map((h,i)=>h.startsWith("대표")?i:-1).filter(i=>i>=0);
+  return rows.slice(1).map(r=>{
+    const label=(r[iDate]||"").trim();
+    const m=label.match(/(\d{2})\.(\d{1,2})\.(\d{1,2})/);
+    if(!m) return null;
+    const main=parseArticles(r[iMain])[0];
+    const link=(r[iLink]||"").trim();
+    if(main && /^https?:/.test(link)) main.url=link;
+    const drive=(r[iImg]||"").match(/\/d\/([\w-]+)/);
+    return {
+      key:`20${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`,
+      label, main, driveId:drive?drive[1]:"",
+      reps:reps.map(i=>parseArticles(r[i])[0]).filter(Boolean),
+      sections:[
+        ["회원사 소식",parseArticles(r[iA])],
+        ["정책 및 부동산개발업계 동향",parseArticles(r[iB])],
+        ["기타 소식",parseArticles(r[iC])]
+      ]
+    };
+  }).filter(Boolean).sort((a,b)=>b.key.localeCompare(a.key));
+}
+
+/* ---------- 화면 ---------- */
+let days=[];
+const $=id=>document.getElementById(id);
+function el(tag,cls,text){
+  const e=document.createElement(tag);
+  if(cls) e.className=cls;
+  if(text!==undefined) e.textContent=text;
+  return e;
+}
+function articleLink(a,cls,extra){
+  const e=el("a",cls,a.title);
+  if(/^https?:\/\//.test(a.url)){e.href=a.url;e.target="_blank";e.rel="noopener noreferrer";}
+  e.appendChild(el("span","src",[extra,a.source].filter(Boolean).join(" · ")));
+  return e;
+}
+function currentDay(){
+  return days.find(d=>d.key===location.hash.slice(1)) || days[0];
+}
+
+function renderDates(){
+  const box=$("dates"); box.textContent="";
+  const cur=currentDay();
+  for(const d of days){
+    const b=el("button","date"+(d===cur?" on":""),d.label);
+    b.type="button";
+    b.onclick=()=>{$("search").value="";location.hash=d.key;render();scrollTo(0,0);};
+    box.appendChild(b);
+  }
+}
+
+function renderDay(){
+  const d=currentDay(), main=$("main"); main.textContent="";
+  const title=el("div","title");
+  title.appendChild(el("h2","",`${d.label} 일일동향보고`));
+  const btns=el("div","btns");
+  if(d.driveId){
+    const o=el("a","btn","첨부자료 보기");
+    o.href=`https://drive.google.com/file/d/${d.driveId}/view`;o.target="_blank";o.rel="noopener";
+    btns.appendChild(o);
+  }
+  const copy=el("button","btn","주소 복사"); copy.type="button";
+  copy.onclick=()=>{
+    const url=location.href.split("#")[0]+"#"+d.key;
+    navigator.clipboard.writeText(url).then(()=>copy.textContent="복사했습니다",()=>prompt("아래 주소를 복사하세요",url));
+  };
+  const print=el("button","btn","인쇄"); print.type="button"; print.onclick=()=>window.print();
+  btns.append(copy,print); title.appendChild(btns); main.appendChild(title);
+
+  if(d.main||d.reps.length){
+    const top=el("div","top");
+    if(d.main){
+      const hero=el("div","card hero");
+      if(d.driveId){
+        const img=el("img"); img.alt="";
+        img.referrerPolicy="no-referrer";
+        img.onerror=()=>img.remove();
+        img.src=`https://drive.google.com/thumbnail?id=${d.driveId}&sz=w1200`;
+        hero.appendChild(img);
+      }
+      hero.appendChild(articleLink(d.main,"head"));
+      top.appendChild(hero);
+    }
+    const reps=el("div","reps");
+    d.reps.forEach(a=>reps.appendChild(articleLink(a,"card rep")));
+    top.appendChild(reps); main.appendChild(top);
+  }
+  for(const [name,list] of d.sections){
+    if(!list.length) continue;
+    const s=el("section","card");
+    s.appendChild(el("h3","",`${name} (${list.length})`));
+    list.forEach(a=>s.appendChild(articleLink(a,"item")));
+    main.appendChild(s);
+  }
+}
+
+function renderSearch(word){
+  const main=$("main"); main.textContent="";
+  const w=word.toLowerCase(), hits=[];
+  for(const d of days)
+    for(const [,list] of d.sections)
+      for(const a of list)
+        if((a.title+" "+a.source).toLowerCase().includes(w)) hits.push([d,a]);
+  const title=el("div","title");
+  title.appendChild(el("h2","",`'${word}' 검색 결과 ${hits.length}건`));
+  main.appendChild(title);
+  const s=el("section","card");
+  if(!hits.length) s.appendChild(el("div","msg","검색 결과가 없습니다."));
+  hits.slice(0,300).forEach(([d,a])=>s.appendChild(articleLink(a,"item",d.label)));
+  main.appendChild(s);
+}
+
+function render(){
+  if(!days.length) return;
+  renderDates();
+  const word=$("search").value.trim();
+  word ? renderSearch(word) : renderDay();
+}
+
+async function load(){
+  try{
+    const res=await fetch(CSV_URL,{cache:"no-store"});
+    if(!res.ok) throw new Error(res.status);
+    days=toDays(parseCSV(await res.text()));
+    if(!days.length) throw new Error("empty");
+    render();
+  }catch(e){
+    $("main").innerHTML='<div class="msg">소식을 불러오지 못했습니다. 잠시 후 새로고침(F5) 해주세요.</div>';
+    console.error(e);
+  }
+}
+
+$("search").addEventListener("input",render);
+addEventListener("hashchange",render);
+$("toTop").onclick=()=>scrollTo({top:0,behavior:"smooth"});
+load();
+</script>
+</body>
+</html>
